@@ -1,15 +1,19 @@
 SRC_DIR := src
 OBJ_DIR := obj
-# all src files
+# all src c files
 SRC := $(wildcard $(SRC_DIR)/*.c)
+# all src c++ files
+SRCPP := $(wildcard $(SRC_DIR)/*.cpp)
 # all objects
-OBJ := $(OBJ_DIR)/y.tab.o $(OBJ_DIR)/lex.yy.o $(OBJ_DIR)/parse.o $(OBJ_DIR)/sample_parse.o $(OBJ_DIR)/pcsa_net.o
+OBJ := $(OBJ_DIR)/y.tab.o $(OBJ_DIR)/lex.yy.o $(OBJ_DIR)/parse.o $(OBJ_DIR)/sample_parse.o $(OBJ_DIR)/pcsa_net.o $(OBJ_DIR)/deque.o
 # all binaries
 BIN := icws
 # C compiler
 CC  := gcc
+# C++ Compiler
+G++ := g++
 # C PreProcessor Flag
-CPPFLAGS := 
+CPPFLAGS := -lpthread
 # compiler flags
 CFLAGS   := -g -Wall
 # DEPS = parse.h y.tab.h
@@ -18,7 +22,7 @@ default: all
 all : icws
 
 icws: $(OBJ)
-	$(CC) $^ -o $@
+	$(G++) $^ -o $@
 
 $(SRC_DIR)/lex.yy.c: $(SRC_DIR)/lexer.l
 	flex -o $@ $^
@@ -29,7 +33,10 @@ $(SRC_DIR)/y.tab.c: $(SRC_DIR)/parser.y
 	mv y.tab.h $(SRC_DIR)/y.tab.h
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c $(OBJ_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp $(OBJ_DIR)
+	$(G++) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 #echo_server: $(OBJ_DIR)/echo_server.o
 #	$(CC) -Werror $^ -o $@

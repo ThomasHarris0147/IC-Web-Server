@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <errno.h>
 #include <unistd.h>
 #include "pcsa_net.h"
 
@@ -93,16 +94,23 @@ int open_clientfd(char *hostname, char *port) {
 
 void write_all(int connFd, char *buf, size_t len) {
     size_t toWrite = len;
-
+    ssize_t nWritten;
+    char* bufp = buf;
     while (toWrite > 0) {
-        ssize_t numWritten = write(connFd, buf, toWrite);
-        if (numWritten < 0) { fprintf(stderr, "Meh, can't write\n"); return ;}
-        toWrite -= numWritten;
-        buf += numWritten;
+        if ((nWritten = write(connFd, bufp, toWrite)) <= 0) {
+            if (errno == EINTR) /* interrupted by signal */
+                nWritten = 0;   /* write again */
+            else{
+                fprintf(stderr, "Meh, can't write\n"); /* else return an error */
+                return ;
+            }
+        }
+        toWrite -= nWritten;
+        bufp += nWritten;
     }
 }
 
-/* Bad, slow readline */
+/* Bad, slow readline 
 ssize_t read_line(int connFd, char *usrbuf, size_t maxlen) {
     int n;
     char c, *bufp = usrbuf;
@@ -113,9 +121,9 @@ ssize_t read_line(int connFd, char *usrbuf, size_t maxlen) {
             *bufp++ = c;
             if (c == '\n') { n++; break; }
         } 
-        else if (numRead == 0) { break; } /* EOF */
-        else return -1;	  /* Error */
+        else if (numRead == 0) { break; } /* EOF 
+        else return -1;	  /* Error 
     }
     *bufp = '\0';
     return n-1;
-}
+}*/
