@@ -15,11 +15,22 @@ extern "C"{
     #include "parse.h"
     #include "pcsa_net.h"
 }
+#include "simple_work_queue.hpp"
 #define size 8192
 #define MAXBUF 2048
 
 typedef struct sockaddr SA;
 using namespace std;
+
+struct survival_bag {
+    struct sockaddr_storage clientAddr;
+    int connFd;
+    char *root_folder;
+};
+
+struct {
+    work_queue work_q;
+} shared;
 
 static const char* DAY_NAMES[] = {
     "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
@@ -143,6 +154,17 @@ void serve_http(int connFd, char* url_folder) { //char* dest
     free(request);
 }
 
+void* conn_handler(void *args) {
+    struct survival_bag *context = (struct survival_bag *) args;
+    
+    pthread_detach(pthread_self());
+    serve_http(context->connFd, context->root_folder);
+    close(context->connFd);
+    
+    free(context); /* Done, get rid of our survival bag */
+    return NULL; /* Nothing meaningful to return */
+}
+
 /* main, input of port and root handled here. */
 int main(int argc, char **argv){
     char* port;
@@ -186,9 +208,14 @@ int main(int argc, char **argv){
     while (1) {
         struct sockaddr_storage clientAddr;
         socklen_t clientLen = sizeof(struct sockaddr_storage);
+        pthread_t threadInfo;
 
         int connFd = accept(listen_fd, (SA *) &clientAddr, &clientLen);
         if (connFd < 0) { fprintf(stderr, "Failed to accept\n"); continue; }
+
+        struct survival_bag *context = (struct survival_bag *)malloc(sizeof(struct survival_bag));
+        context->connFd = connFd;
+        context->root_folder = root_folder;
 
         char hostBuf[MAXBUF], svcBuf[MAXBUF];
         if (getnameinfo((SA *) &clientAddr, clientLen, 
@@ -196,8 +223,7 @@ int main(int argc, char **argv){
             printf("Connection from %s:%s\n", hostBuf, svcBuf);
         else
             printf("Connection from ?UNKNOWN?\n");
-                
-        serve_http(connFd, root_folder);
-        close(connFd);
+        memcpy(&context->clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
+        pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
     }
 }

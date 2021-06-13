@@ -13,7 +13,7 @@ CC  := gcc
 # C++ Compiler
 G++ := g++
 # C PreProcessor Flag
-CPPFLAGS := -lpthread
+CPPFLAGS := -pthread
 # compiler flags
 CFLAGS   := -g -Wall
 # DEPS = parse.h y.tab.h
@@ -22,7 +22,7 @@ default: all
 all : icws
 
 icws: $(OBJ)
-	$(G++) $^ -o $@
+	$(G++) $(CPPFLAGS) $^ -o $@
 
 $(SRC_DIR)/lex.yy.c: $(SRC_DIR)/lexer.l
 	flex -o $@ $^
