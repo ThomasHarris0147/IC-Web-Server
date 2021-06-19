@@ -169,9 +169,10 @@ void* conn_handler(void *args) {
 int main(int argc, char **argv){
     char* port;
     char* root_folder;
+    int num_threads, timeout;
     /* Basic Error Checking */
-    if(argc != 5){
-        printf("not enough arguments\n");
+    if(argc != 9){
+        printf("Arguments Error (too few or too much)\n");
         return 0;
     }
     if (!strcmp(argv[1],"--port")){
@@ -184,11 +185,7 @@ int main(int argc, char **argv){
         port = argv[2];
     }
     else{
-        if (!strcmp(argv[1],"port") || !strcmp(argv[1],"-port")){
-            printf("invalid port command: did you mean --port?\n");
-            return 0;
-        }
-        printf("invalid port command: try to use port\n");
+        printf("invalid port command: try to use --port\n");
         return 0;
     }
 
@@ -196,11 +193,35 @@ int main(int argc, char **argv){
         root_folder = argv[4];
     }
     else{
-        if (!strcmp(argv[1],"root") || !strcmp(argv[1],"-root")){
-            printf("invalid root command: did you mean --root?\n");
-            return 0;
-        }
         printf("invalid root command: try to use --root\n");
+        return 0;
+    }
+
+    if (!strcmp(argv[5],"--numThreads")){
+        for(int i = 0; i < strlen(argv[6]); i++){
+            if (!isdigit(argv[6][i])){
+                printf("not a valid number: please enter a valid number of threads number\n");
+                return 0;
+            }
+        }
+        num_threads = atoi(argv[6]);
+    }
+    else{
+        printf("invalid numThreads command: try to use --numThreads\n");
+        return 0;
+    }
+
+    if (!strcmp(argv[7],"--port")){
+        for(int i = 0; i < strlen(argv[8]); i++){
+            if (!isdigit(argv[8][i])){
+                printf("not a valid number: please enter a valid timeout number\n");
+                return 0;
+            }
+        }
+        timeout = atoi(argv[8]);
+    }
+    else{
+        printf("invalid timeout command: try to use --timeout\n");
         return 0;
     }
     /* Socket connecting and interacting starts here */
