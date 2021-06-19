@@ -211,7 +211,7 @@ int main(int argc, char **argv){
         return 0;
     }
 
-    if (!strcmp(argv[7],"--port")){
+    if (!strcmp(argv[7],"--timeout")){
         for(int i = 0; i < strlen(argv[8]); i++){
             if (!isdigit(argv[8][i])){
                 printf("not a valid number: please enter a valid timeout number\n");
