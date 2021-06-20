@@ -76,13 +76,15 @@ char* check_MIME(char* string){
 
 /* create a correct response with returned data type and size */
 char* create_reponse_request(char* buf, int number_status, char* status, unsigned long size_of_packet, char* type){
+    char* time = RFC1123_DateTimeNow();
     sprintf(buf,
         "HTTP/1.1 %d %s\r\n"
         "Date: %s\r\n"
         "Server: ICWS\r\n"
-        "Connection: close\r\n"
+        "Connection: keep-alive\r\n"
         "Content-type: %s\r\n"
-        "Content-length: %lu\r\n\r\n", number_status, status,  RFC1123_DateTimeNow(), type, size_of_packet
+        "Content-length: %lu\r\n"
+        "Last-Modified: %s\r\n\r\n", number_status, status,  time, type, size_of_packet, time
     );
     return buf;
 }
@@ -99,18 +101,20 @@ char* create_error_request(char *buf, int number_status, char* status){
 }
 
 /* do the internet thing. Send http over. */
-void serve_http(int connFd, char* url_folder) { //char* dest
+int serve_http(int connFd, char* url_folder) { //char* dest
     //Read from the file the sample
     int index;
     char buf[size];
     int readRet = read(connFd,buf,size);
     //Parse the buffer to the parse function. You will need to pass the socket fd and the buffer would need to
     //be read from that fd
+    mtx.lock();
     Request *request = parse(buf,readRet,connFd);
     if (request==NULL) {
         printf("NULL found\n"); 
-        return;
+        return -1;
     }
+    mtx.unlock();
     //Just printing everything
     printf("Http Method %s\n",request->http_method);
     printf("Http Version %s\n",request->http_version);
@@ -162,6 +166,7 @@ void serve_http(int connFd, char* url_folder) { //char* dest
     }
     free(request->headers);
     free(request);
+    return 0;
 }
 
 /*void* conn_handler(void *args) {
@@ -176,7 +181,8 @@ void serve_http(int connFd, char* url_folder) { //char* dest
 }*/
 
 void web_server(int w, char* root_folder){
-    while(1){
+    serve_http(w, root_folder);
+    /*while(1){
         struct sockaddr_storage clientAddr;
         socklen_t clientLen = sizeof(struct sockaddr_storage);
         int connFd = accept(w, (SA *) &clientAddr, &clientLen);
@@ -190,8 +196,7 @@ void web_server(int w, char* root_folder){
             printf("Connection from %s:%s\n", hostBuf, svcBuf);
         else
             printf("Connection from ?UNKNOWN?\n");
-        serve_http(connFd, root_folder);
-    }
+    }*/
 }
 
 void do_work() {
@@ -201,6 +206,7 @@ void do_work() {
             if (w < 0) break; // Terminate with a number < 0
             // NOTE: in fact printf is not thread safe
             web_server(w, root_folder);
+            close(w);
         }
         else {// NO JOB: yield -- let someone else run first
             /* Option 1: continue; */
@@ -275,8 +281,21 @@ int main(int argc, char **argv){
         worker[ii] = std::thread(do_work);
     }
     /* Socket connecting and interacting starts here */
+    int listen_fd = open_listenfd(port);
     while (1) {
-        int listen_fd = open_listenfd(port);
-        shared.work_q.add_job(listen_fd);
+        struct sockaddr_storage clientAddr;
+        socklen_t clientLen = sizeof(struct sockaddr_storage);
+        int connFd = accept(listen_fd, (SA *) &clientAddr, &clientLen);
+        if (connFd < 0){
+            fprintf(stderr, "Failed to accept\n");
+            continue;
+        }
+        char hostBuf[MAXBUF], svcBuf[MAXBUF];
+        /*if (getnameinfo((SA *) &clientAddr, clientLen, 
+                        hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
+            printf("Connection from %s:%s\n", hostBuf, svcBuf);
+        else
+            printf("Connection from ?UNKNOWN?\n");*/
+        shared.work_q.add_job(connFd);
     }
 }
