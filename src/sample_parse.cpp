@@ -10,7 +10,12 @@
 #include <pthread.h>
 #include <cstring>
 #include <iostream>
+#include <thread>
 #include <time.h>
+#include <vector>
+#include <mutex>
+#include <algorithm>
+#include <condition_variable>
 extern "C"{
     #include "parse.h"
     #include "pcsa_net.h"
@@ -22,11 +27,12 @@ extern "C"{
 typedef struct sockaddr SA;
 using namespace std;
 
-struct survival_bag {
-    struct sockaddr_storage clientAddr;
-    int connFd;
-    char *root_folder;
-};
+std::mutex mtx;
+std::condition_variable cv;
+
+char* port;
+char* root_folder;
+int num_threads, timeout;
 
 struct {
     work_queue work_q;
@@ -101,10 +107,14 @@ void serve_http(int connFd, char* url_folder) { //char* dest
     //Parse the buffer to the parse function. You will need to pass the socket fd and the buffer would need to
     //be read from that fd
     Request *request = parse(buf,readRet,connFd);
+    if (request==NULL) {
+        printf("NULL found\n"); 
+        return;
+    }
     //Just printing everything
-    /*printf("Http Method %s\n",request->http_method);
+    printf("Http Method %s\n",request->http_method);
     printf("Http Version %s\n",request->http_version);
-    printf("Http Uri %s\n",request->http_uri);*/
+    printf("Http Uri %s\n",request->http_uri);
     struct stat stats;
     char *type;
     char *after_fullstop;
@@ -126,7 +136,7 @@ void serve_http(int connFd, char* url_folder) { //char* dest
             type = "";
             type = check_MIME(after_fullstop);
             create_reponse_request(buf, 200, "OK", stats.st_size, type);
-            printf("buf = %s\n",buf);
+            printf("%s\n",buf);
             write_all(connFd, buf, strlen(buf));
             ssize_t numRead;
             while ((numRead = read(inputFd, buf, MAXBUF)) > 0) {
@@ -154,22 +164,58 @@ void serve_http(int connFd, char* url_folder) { //char* dest
     free(request);
 }
 
-void* conn_handler(void *args) {
+/*void* conn_handler(void *args) {
     struct survival_bag *context = (struct survival_bag *) args;
     
     pthread_detach(pthread_self());
     serve_http(context->connFd, context->root_folder);
     close(context->connFd);
     
-    free(context); /* Done, get rid of our survival bag */
-    return NULL; /* Nothing meaningful to return */
+    free(context); /* Done, get rid of our survival bag 
+    return NULL; /* Nothing meaningful to return 
+}*/
+
+void web_server(int w, char* root_folder){
+    while(1){
+        struct sockaddr_storage clientAddr;
+        socklen_t clientLen = sizeof(struct sockaddr_storage);
+        int connFd = accept(w, (SA *) &clientAddr, &clientLen);
+        if (connFd < 0){
+            fprintf(stderr, "Failed to accept\n");
+            continue;
+        }
+        char hostBuf[MAXBUF], svcBuf[MAXBUF];
+        if (getnameinfo((SA *) &clientAddr, clientLen, 
+                        hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
+            printf("Connection from %s:%s\n", hostBuf, svcBuf);
+        else
+            printf("Connection from ?UNKNOWN?\n");
+        serve_http(connFd, root_folder);
+    }
 }
 
+void do_work() {
+    for (;;) {
+        int w;
+        if (shared.work_q.remove_job(&w)) {
+            if (w < 0) break; // Terminate with a number < 0
+            // NOTE: in fact printf is not thread safe
+            web_server(w, root_folder);
+        }
+        else {// NO JOB: yield -- let someone else run first
+            /* Option 1: continue; */
+            /* Option 2: this_thread::yield(); */
+            /* Option 3: sleep(0) */
+            /* Option 4: usleep(250000); 250ms */
+            usleep(250000);
+        }
+        /* Option 5: Go to sleep until it's been notified of changes in the
+         * work_queue. Use semaphores or conditional variables
+         */
+    }
+}
 /* main, input of port and root handled here. */
 int main(int argc, char **argv){
-    char* port;
-    char* root_folder;
-    int num_threads, timeout;
     /* Basic Error Checking */
     if(argc != 9){
         printf("Arguments Error (too few or too much)\n");
@@ -224,27 +270,13 @@ int main(int argc, char **argv){
         printf("invalid timeout command: try to use --timeout\n");
         return 0;
     }
+    thread worker[num_threads];
+    for (int ii = 0; ii < num_threads; ii++){
+        worker[ii] = std::thread(do_work);
+    }
     /* Socket connecting and interacting starts here */
-    int listen_fd = open_listenfd(port);
     while (1) {
-        struct sockaddr_storage clientAddr;
-        socklen_t clientLen = sizeof(struct sockaddr_storage);
-        pthread_t threadInfo;
-
-        int connFd = accept(listen_fd, (SA *) &clientAddr, &clientLen);
-        if (connFd < 0) { fprintf(stderr, "Failed to accept\n"); continue; }
-
-        struct survival_bag *context = (struct survival_bag *)malloc(sizeof(struct survival_bag));
-        context->connFd = connFd;
-        context->root_folder = root_folder;
-
-        char hostBuf[MAXBUF], svcBuf[MAXBUF];
-        if (getnameinfo((SA *) &clientAddr, clientLen, 
-                        hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
-            printf("Connection from %s:%s\n", hostBuf, svcBuf);
-        else
-            printf("Connection from ?UNKNOWN?\n");
-        memcpy(&context->clientAddr, &clientAddr, sizeof(struct sockaddr_storage));
-        pthread_create(&threadInfo, NULL, conn_handler, (void *) context);
+        int listen_fd = open_listenfd(port);
+        shared.work_q.add_job(listen_fd);
     }
 }

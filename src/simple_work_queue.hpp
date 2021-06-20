@@ -3,16 +3,22 @@
 
 #include<deque>
 #include<pthread.h>
+#include <sys/socket.h>
 
 using namespace std;
 
+struct survival_bag {
+    int connFd;
+    int listen_fd;
+};
+
 struct work_queue {
-    deque<long> jobs;
+    deque<int> jobs;
     pthread_mutex_t jobs_mutex;
     
     /* add a new job to the work queue
      * and return the number of jobs in the queue */
-    int add_job(long num) {
+    int add_job(int num) {
         pthread_mutex_lock(&this->jobs_mutex);
         jobs.push_back(num);
         size_t len = jobs.size();
@@ -22,7 +28,7 @@ struct work_queue {
     
     /* return FALSE if no job is returned
      * otherwise return TRUE and set *job to the job */
-    bool remove_job(long *job) {
+    bool remove_job(int *job) {
         pthread_mutex_lock(&this->jobs_mutex);
         bool success = !this->jobs.empty();
         if (success) {
