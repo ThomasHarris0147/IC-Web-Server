@@ -15,6 +15,7 @@
 #include <vector>
 #include <mutex>
 #include <algorithm>
+#include <poll.h>
 #include <condition_variable>
 extern "C"{
     #include "parse.h"
@@ -105,7 +106,32 @@ int serve_http(int connFd, char* url_folder) { //char* dest
     //Read from the file the sample
     int index;
     char buf[size];
-    int readRet = read(connFd,buf,size);
+    int readRet, rc, sd_inet;
+    struct sockaddr_in sockinet;
+    unsigned int slen;
+    struct pollfd fdarray[1];
+    while (1){
+        fdarray[0].fd = connFd;
+        fdarray[0].events = POLLIN;
+        rc = poll(fdarray,1,timeout);
+        if (rc==0){
+            //printf("reached timeout\n");
+            create_error_request(buf, 408, "Request Timeout");
+            write_all(connFd, buf, strlen(buf));
+            return 0;
+        }
+        else if (rc < 0){
+            //printf("reached bad connection\n");
+            create_error_request(buf, 400, "Bad Request");
+            write_all(connFd, buf, strlen(buf));
+            return 0;
+        }
+        else if ((fdarray[0].fd == connFd) && (fdarray[0].revents == POLLIN)){
+            //printf("reached connection\n");
+            readRet = read(connFd, buf, size);
+            break;
+        }
+    }
     //Parse the buffer to the parse function. You will need to pass the socket fd and the buffer would need to
     //be read from that fd
     mtx.lock();
@@ -116,9 +142,9 @@ int serve_http(int connFd, char* url_folder) { //char* dest
     }
     mtx.unlock();
     //Just printing everything
-    printf("Http Method %s\n",request->http_method);
+    /*printf("Http Method %s\n",request->http_method);
     printf("Http Version %s\n",request->http_version);
-    printf("Http Uri %s\n",request->http_uri);
+    printf("Http Uri %s\n",request->http_uri);*/
     struct stat stats;
     char *type;
     char *after_fullstop;
@@ -130,7 +156,6 @@ int serve_http(int connFd, char* url_folder) { //char* dest
     int inputFd = open(url, O_RDONLY);
     if (inputFd < 0){
         printf("input failed\n");
-        //write_all(connFd, create_error_request(500, "Internal Server Error"), strlen(buf));
     }
     after_fullstop = strrchr(url, '.');
     after_fullstop++;
@@ -140,13 +165,16 @@ int serve_http(int connFd, char* url_folder) { //char* dest
             type = "";
             type = check_MIME(after_fullstop);
             create_reponse_request(buf, 200, "OK", stats.st_size, type);
-            printf("%s\n",buf);
+            //printf("%s\n",buf);
             write_all(connFd, buf, strlen(buf));
             ssize_t numRead;
             while ((numRead = read(inputFd, buf, MAXBUF)) > 0) {
                 /* What about short counts? */
                 write_all(connFd, buf, numRead);
             }
+        } else {
+            create_error_request(buf, 404, "Not Found");
+            write_all(connFd, buf, strlen(buf));
         }
         close(inputFd);
     }
@@ -155,6 +183,9 @@ int serve_http(int connFd, char* url_folder) { //char* dest
             type = "";
             type = check_MIME(after_fullstop);
             create_reponse_request(buf, 200, "OK", stats.st_size, type);
+            write_all(connFd, buf, strlen(buf));
+        } else {
+            create_error_request(buf, 404, "Not Found");
             write_all(connFd, buf, strlen(buf));
         }
         close(inputFd);
@@ -168,17 +199,6 @@ int serve_http(int connFd, char* url_folder) { //char* dest
     free(request);
     return 0;
 }
-
-/*void* conn_handler(void *args) {
-    struct survival_bag *context = (struct survival_bag *) args;
-    
-    pthread_detach(pthread_self());
-    serve_http(context->connFd, context->root_folder);
-    close(context->connFd);
-    
-    free(context); /* Done, get rid of our survival bag 
-    return NULL; /* Nothing meaningful to return 
-}*/
 
 void web_server(int w, char* root_folder){
     serve_http(w, root_folder);
@@ -290,7 +310,7 @@ int main(int argc, char **argv){
             fprintf(stderr, "Failed to accept\n");
             continue;
         }
-        char hostBuf[MAXBUF], svcBuf[MAXBUF];
+        //char hostBuf[MAXBUF], svcBuf[MAXBUF];
         /*if (getnameinfo((SA *) &clientAddr, clientLen, 
                         hostBuf, MAXBUF, svcBuf, MAXBUF, 0)==0) 
             printf("Connection from %s:%s\n", hostBuf, svcBuf);
